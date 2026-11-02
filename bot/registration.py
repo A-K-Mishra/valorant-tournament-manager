@@ -203,8 +203,14 @@ class Configuration(commands.GroupCog, group_name="config", group_description="C
                 "Pending and Participant must be different roles.", ephemeral=True
             )
             return
-        await self.bot.registration_db.set_guild_setting(interaction.guild_id, setting, role.id)
-        await interaction.response.send_message(f"{label} set to {role.mention}.", ephemeral=True)
+        await self.bot.registration_db.set_registration_role_and_reconcile(
+            interaction.guild_id, setting, role.id
+        )
+        await interaction.response.send_message(
+            f"{label} set to {role.mention}. Existing registrations are being reconciled.",
+            ephemeral=True,
+        )
+        await self.bot.process_role_sync_jobs()
 
     @app_commands.command(name="participant-role", description="Set the role given to approved players")
     @app_commands.guild_only()
