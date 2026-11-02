@@ -1,6 +1,5 @@
 title: "aBlitz's Challenges"
 description: "Community VALORANT challenges and tournaments"
-theme: minima
 markdown: kramdown
 plugins:
   - jekyll-relative-links
