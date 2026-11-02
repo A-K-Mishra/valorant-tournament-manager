@@ -257,6 +257,41 @@ class RegistrationDatabase:
             )
             return [dict(row) for row in await cur.fetchall()]
 
+
+    async def role_sync_summary(self, guild_id: int) -> dict:
+        async with aiosqlite.connect(self.database_path) as db:
+            cur = await db.execute(
+                """SELECT
+                   SUM(CASE WHEN status='pending' OR (status='failed' AND attempts < 8 AND next_attempt_at <= unixepoch()) THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN status='failed' AND attempts < 8 AND next_attempt_at > unixepoch() THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN status='failed' AND attempts >= 8 THEN 1 ELSE 0 END)
+                   FROM role_sync_jobs WHERE guild_id=?""", (guild_id,)
+            )
+            pending, waiting, exhausted = await cur.fetchone()
+            cur = await db.execute(
+                """SELECT user_id,role_id,operation,attempts,last_error
+                   FROM role_sync_jobs WHERE guild_id=? AND status='failed'
+                   ORDER BY attempts DESC,id DESC LIMIT 5""", (guild_id,)
+            )
+            recent = [
+                {"user_id": r[0], "role_id": r[1], "operation": r[2],
+                 "attempts": r[3], "last_error": r[4]}
+                for r in await cur.fetchall()
+            ]
+            return {"pending": pending or 0, "waiting": waiting or 0,
+                    "exhausted": exhausted or 0, "recent": recent}
+
+    async def retry_failed_role_sync_jobs(self, guild_id: int) -> int:
+        async with aiosqlite.connect(self.database_path) as db:
+            cur = await db.execute(
+                """UPDATE role_sync_jobs
+                   SET status='pending',attempts=0,next_attempt_at=0,last_error=NULL,
+                       updated_at=CURRENT_TIMESTAMP
+                   WHERE guild_id=? AND status='failed'""", (guild_id,)
+            )
+            await db.commit()
+            return cur.rowcount
+
     async def finish_role_sync_job(self, job_id: int) -> None:
         async with aiosqlite.connect(self.database_path) as db:
             await db.execute(
