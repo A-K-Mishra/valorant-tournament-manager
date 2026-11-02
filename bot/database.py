@@ -83,6 +83,43 @@ class RegistrationDatabase:
             )
             await db.commit()
 
+    async def set_registration_role_and_reconcile(
+        self, guild_id: int, key: str, role_id: int,
+    ) -> None:
+        """Change a registration role and enqueue reconciliation for existing members."""
+        if key not in {"participant_role_id", "pending_role_id"}:
+            raise ValueError("Unsupported registration role setting")
+        async with aiosqlite.connect(self.database_path) as db:
+            await db.execute("BEGIN")
+            cur = await db.execute(
+                f"SELECT {key} FROM guild_settings WHERE guild_id=?", (guild_id,)
+            )
+            row = await cur.fetchone()
+            old_role_id = row[0] if row else None
+            await db.execute(
+                "INSERT OR IGNORE INTO guild_settings(guild_id) VALUES(?)", (guild_id,)
+            )
+            await db.execute(
+                f"UPDATE guild_settings SET {key}=?, updated_at=CURRENT_TIMESTAMP WHERE guild_id=?",
+                (role_id, guild_id),
+            )
+            if old_role_id and old_role_id != role_id:
+                cur = await db.execute(
+                    "SELECT user_id FROM registrations WHERE guild_id=?",
+                    (guild_id,),
+                )
+                for (user_id,) in await cur.fetchall():
+                    await self._enqueue_role_job(db, guild_id, user_id, old_role_id, "remove")
+
+            desired_status = "approved" if key == "participant_role_id" else "pending"
+            cur = await db.execute(
+                "SELECT user_id FROM registrations WHERE guild_id=? AND status=?",
+                (guild_id, desired_status),
+            )
+            for (user_id,) in await cur.fetchall():
+                await self._enqueue_role_job(db, guild_id, user_id, role_id, "add")
+            await db.commit()
+
     async def add_admin_role(self, guild_id: int, role_id: int, added_by: int) -> None:
         async with aiosqlite.connect(self.database_path) as db:
             await db.execute(
