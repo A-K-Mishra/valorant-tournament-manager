@@ -62,9 +62,13 @@ def test_registration_lifecycle_and_role_outbox(tmp_path):
         target_job_id = jobs[0]["id"]
         await db.fail_role_sync_job(target_job_id, "temporary failure")
         failed = await db.pending_role_sync_jobs()
-        failed_target = next(job for job in failed if job["id"] == target_job_id)
-        assert failed_target["attempts"] == 1
-        assert failed_target["status"] == "failed"
+        assert target_job_id not in {job["id"] for job in failed}
+        summary = await db.role_sync_summary(10)
+        assert summary["waiting"] == 1
+        assert summary["recent"][0]["attempts"] == 1
+        assert await db.retry_failed_role_sync_jobs(10) == 1
+        retried = await db.pending_role_sync_jobs()
+        assert target_job_id in {job["id"] for job in retried}
         await db.finish_role_sync_job(target_job_id)
         remaining = await db.pending_role_sync_jobs()
         assert target_job_id not in {job["id"] for job in remaining}
@@ -81,6 +85,35 @@ def test_existing_database_migrates_without_losing_registrations(tmp_path):
         await db.initialize()
         assert (await db.get(1, 2))["riot_id"] == "Legacy#1234"
         assert (await db.get_guild_settings(1))["participant_role_id"] is None
+
+    asyncio.run(scenario())
+
+
+
+def test_role_sync_retry_migration_adds_backoff_column_to_legacy_database(tmp_path):
+    async def scenario():
+        db = RegistrationDatabase(str(tmp_path / "legacy-role-jobs.sqlite3"))
+        await db.initialize()
+        import aiosqlite
+        async with aiosqlite.connect(db.database_path) as conn:
+            await conn.execute("DROP TABLE role_sync_jobs")
+            await conn.execute("""CREATE TABLE role_sync_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id INTEGER NOT NULL, user_id INTEGER NOT NULL, role_id INTEGER NOT NULL,
+                operation TEXT NOT NULL CHECK (operation IN ('add','remove')),
+                status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','complete','failed')),
+                attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )""")
+            await conn.execute(
+                "INSERT INTO role_sync_jobs(guild_id,user_id,role_id,operation) VALUES(1,2,3,'add')"
+            )
+            await conn.commit()
+        await db.initialize()
+        jobs = await db.pending_role_sync_jobs()
+        assert len(jobs) == 1
+        assert jobs[0]["next_attempt_at"] == 0
 
     asyncio.run(scenario())
 
