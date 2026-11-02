@@ -10,10 +10,13 @@ from bot.database import RegistrationDatabase
 
 class TournamentManagerBot(commands.Bot):
     def __init__(self, settings: Settings) -> None:
-        super().__init__(command_prefix="!", intents=discord.Intents.default())
+        intents = discord.Intents.default()
+        intents.members = True
+        super().__init__(command_prefix="!", intents=intents)
         self.settings = settings
         self.registration_db = RegistrationDatabase(settings.database_path)
         self._role_sync_task: asyncio.Task | None = None
+        self._role_sync_lock = asyncio.Lock()
 
     async def setup_hook(self) -> None:
         await self.registration_db.initialize()
@@ -33,6 +36,11 @@ class TournamentManagerBot(commands.Bot):
             self._role_sync_task = asyncio.create_task(self._role_sync_worker())
 
     async def process_role_sync_jobs(self) -> None:
+        # Commands and the periodic worker can trigger this concurrently.
+        async with self._role_sync_lock:
+            await self._process_role_sync_jobs_locked()
+
+    async def _process_role_sync_jobs_locked(self) -> None:
         jobs = await self.registration_db.pending_role_sync_jobs()
         for job in jobs:
             try:
@@ -67,18 +75,27 @@ class TournamentManagerBot(commands.Bot):
         if not row:
             return
         settings = await self.registration_db.get_guild_settings(member.guild.id)
-        role_id = (
+        desired_role_id = (
             settings["participant_role_id"] if row["status"] == "approved"
             else settings["pending_role_id"] if row["status"] == "pending"
             else None
         )
-        if role_id:
-            role = member.guild.get_role(role_id)
-            if role:
-                try:
+        configured_ids = {
+            settings["participant_role_id"], settings["pending_role_id"]
+        } - {None}
+        try:
+            for role_id in configured_ids:
+                role = member.guild.get_role(role_id)
+                if role is None:
+                    continue
+                should_have = role_id == desired_role_id
+                has_role = role in member.roles
+                if should_have and not has_role:
                     await member.add_roles(role, reason="Restore tournament registration role")
-                except discord.HTTPException as exc:
-                    logging.warning("Could not restore role for %s: %s", member.id, exc)
+                elif not should_have and has_role:
+                    await member.remove_roles(role, reason="Reconcile tournament registration roles")
+        except discord.HTTPException as exc:
+            logging.warning("Could not reconcile roles for %s: %s", member.id, exc)
 
 
 def main() -> None:
