@@ -113,11 +113,12 @@ class RegistrationDatabase:
 
             desired_status = "approved" if key == "participant_role_id" else "pending"
             cur = await db.execute(
-                "SELECT user_id FROM registrations WHERE guild_id=? AND status=?",
-                (guild_id, desired_status),
+                "SELECT user_id,status FROM registrations WHERE guild_id=?",
+                (guild_id,),
             )
-            for (user_id,) in await cur.fetchall():
-                await self._enqueue_role_job(db, guild_id, user_id, role_id, "add")
+            for user_id, status in await cur.fetchall():
+                operation = "add" if status == desired_status else "remove"
+                await self._enqueue_role_job(db, guild_id, user_id, role_id, operation)
             await db.commit()
 
     async def add_admin_role(self, guild_id: int, role_id: int, added_by: int) -> None:
