@@ -1,18 +1,16 @@
-# aBlitz's Challenges
-
-Welcome to the home of **aBlitz's Challenges**, a community competition hub for VALORANT players.
-
-We plan to run individual achievement challenges and organised tournaments, with participant registration, evidence review and published results.
-
-## Community documents
-
-- [Terms of Service](terms.md)
-- [Privacy Policy](privacy.md)
-
-## Contact
-
-For questions about a competition or this community, contact the server moderators through the official Discord server.
-
 ---
-
-This is an independent community project and is not affiliated with or endorsed by Riot Games.
+layout: default
+title: Home
+description: Community VALORANT challenges and tournaments
+---
+<section class="hero">
+<div class="eyebrow">A COMMUNITY BUILT TO COMPETE</div>
+<h1>Make the play.<br>Own the <em>moment.</em></h1>
+<p>Welcome to aBlitz's Challenges — a community space for VALORANT players to chase big plays, take on weekly challenges and compete together.</p>
+<div class="hero-actions"><a class="button" href="https://discord.com" target="_blank" rel="noopener">Enter the community ↗</a><a class="button secondary" href="#community-docs">Community documents</a></div>
+</section>
+<div class="eyebrow" id="community-docs">THE FINE PRINT, MADE SIMPLE</div><h2 class="section-heading">Community documents</h2>
+<div class="card-grid">
+<a class="info-card" href="{{ '/terms' | relative_url }}"><div class="card-kicker">01 / PARTICIPATION</div><h3>Terms of Service</h3><p>How events work, what fair play means and the standards expected from every participant.</p><span class="arrow">Read the terms ↗</span></a>
+<a class="info-card" href="{{ '/privacy' | relative_url }}"><div class="card-kicker">02 / YOUR DATA</div><h3>Privacy Policy</h3><p>What information the community bot handles, why it is used and how to contact the moderators.</p><span class="arrow">Read the policy ↗</span></a>
+</div>
