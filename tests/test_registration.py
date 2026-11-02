@@ -39,8 +39,10 @@ def test_registration_lifecycle_and_role_outbox(tmp_path):
 
         assert await db.review(10, 20, 99, "approved") == "updated"
         jobs = await db.pending_role_sync_jobs()
+        # The approval supersedes the earlier Pending-role add. Only the
+        # latest desired operation for each role should remain in the outbox.
         assert [(job["role_id"], job["operation"]) for job in jobs] == [
-            (501, "add"), (501, "remove"), (502, "add")
+            (501, "remove"), (502, "add")
         ]
         assert await db.review(10, 20, 99, "rejected") == "not_pending"
         assert (await db.get(10, 20))["status"] == "approved"
