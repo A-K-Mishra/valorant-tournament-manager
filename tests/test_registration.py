@@ -83,3 +83,33 @@ def test_existing_database_migrates_without_losing_registrations(tmp_path):
         assert (await db.get_guild_settings(1))["participant_role_id"] is None
 
     asyncio.run(scenario())
+
+
+def test_changing_registration_roles_reconciles_existing_members(tmp_path):
+    async def scenario():
+        db = RegistrationDatabase(str(tmp_path / "reconcile.sqlite3"))
+        await db.initialize()
+        await db.set_guild_setting(7, "pending_role_id", 501)
+        await db.set_guild_setting(7, "participant_role_id", 502)
+
+        assert await db.submit(7, 20, "Pending#1234") == "submitted"
+        assert await db.submit(7, 21, "Approved#1234") == "submitted"
+        assert await db.review(7, 21, 99, "approved") == "updated"
+
+        await db.set_registration_role_and_reconcile(7, "participant_role_id", 503)
+        jobs = await db.pending_role_sync_jobs()
+        intents = {(job["user_id"], job["role_id"]): job["operation"] for job in jobs}
+        assert intents[(20, 502)] == "remove"
+        assert intents[(21, 502)] == "remove"
+        assert intents[(20, 503)] == "remove"
+        assert intents[(21, 503)] == "add"
+
+        await db.set_registration_role_and_reconcile(7, "pending_role_id", 504)
+        jobs = await db.pending_role_sync_jobs()
+        intents = {(job["user_id"], job["role_id"]): job["operation"] for job in jobs}
+        assert intents[(20, 501)] == "remove"
+        assert intents[(21, 501)] == "remove"
+        assert intents[(20, 504)] == "add"
+        assert intents[(21, 504)] == "remove"
+
+    asyncio.run(scenario())
