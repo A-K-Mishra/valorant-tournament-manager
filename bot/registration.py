@@ -212,6 +212,41 @@ class Configuration(commands.GroupCog, group_name="config", group_description="C
         )
         await self.bot.process_role_sync_jobs()
 
+
+    @app_commands.command(name="role-sync-status", description="Show queued and failed registration role updates")
+    @app_commands.guild_only()
+    async def role_sync_status(self, interaction: discord.Interaction) -> None:
+        if not await self._require_admin(interaction):
+            return
+        summary = await self.bot.registration_db.role_sync_summary(interaction.guild_id)
+        lines = [
+            "**Registration role sync**",
+            f"Ready to process: **{summary['pending']}**",
+            f"Waiting for retry: **{summary['waiting']}**",
+            f"Stopped after 8 failures: **{summary['exhausted']}**",
+        ]
+        for job in summary["recent"]:
+            error = discord.utils.escape_markdown(job["last_error"] or "Unknown error")
+            lines.append(
+                f"• <@{job['user_id']}> / <@&{job['role_id']}> ({job['operation']}, "
+                f"{job['attempts']} attempts): {error[:180]}"
+            )
+        await interaction.response.send_message(
+            "\n".join(lines), ephemeral=True,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
+
+    @app_commands.command(name="role-sync-retry", description="Retry failed registration role updates")
+    @app_commands.guild_only()
+    async def role_sync_retry(self, interaction: discord.Interaction) -> None:
+        if not await self._require_admin(interaction):
+            return
+        count = await self.bot.registration_db.retry_failed_role_sync_jobs(interaction.guild_id)
+        await interaction.response.send_message(
+            f"Reset **{count}** failed role update(s). Processing them now.", ephemeral=True
+        )
+        await self.bot.process_role_sync_jobs()
+
     @app_commands.command(name="participant-role", description="Set the role given to approved players")
     @app_commands.guild_only()
     async def participant_role(self, interaction: discord.Interaction, role: discord.Role) -> None:
