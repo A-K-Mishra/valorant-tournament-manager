@@ -57,11 +57,16 @@ def test_registration_lifecycle_and_role_outbox(tmp_path):
         assert await db.remove_admin_role(10, 700) is True
         assert await db.get_admin_role_ids(10) == ()
 
-        await db.fail_role_sync_job(jobs[0]["id"], "temporary failure")
+        target_job_id = jobs[0]["id"]
+        await db.fail_role_sync_job(target_job_id, "temporary failure")
         failed = await db.pending_role_sync_jobs()
-        assert failed[0]["attempts"] == 1
-        await db.finish_role_sync_job(failed[0]["id"])
-        assert all(job["status"] == "complete" for job in await db.pending_role_sync_jobs()) is True
+        failed_target = next(job for job in failed if job["id"] == target_job_id)
+        assert failed_target["attempts"] == 1
+        assert failed_target["status"] == "failed"
+        await db.finish_role_sync_job(target_job_id)
+        remaining = await db.pending_role_sync_jobs()
+        assert target_job_id not in {job["id"] for job in remaining}
+        assert len(remaining) == 5
 
     asyncio.run(scenario())
 
