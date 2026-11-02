@@ -169,8 +169,39 @@ class Configuration(commands.GroupCog, group_name="config", group_description="C
     ) -> None:
         if not await self._require_admin(interaction):
             return
-        if role.is_default():
-            await interaction.response.send_message("The @everyone role cannot be used here.", ephemeral=True)
+        if role.is_default() or role.managed:
+            await interaction.response.send_message(
+                "Choose a normal server role; @everyone and integration-managed roles cannot be used.",
+                ephemeral=True,
+            )
+            return
+        guild = interaction.guild
+        bot_member = guild.me if guild else None
+        if bot_member is None:
+            await interaction.response.send_message(
+                "I couldn't resolve my server membership. Please try again shortly.", ephemeral=True
+            )
+            return
+        if not bot_member.guild_permissions.manage_roles:
+            await interaction.response.send_message(
+                "I need the Manage Roles permission before a registration role can be configured.",
+                ephemeral=True,
+            )
+            return
+        if role >= bot_member.top_role:
+            await interaction.response.send_message(
+                "That role is at or above my highest role. Move my bot role above it in Server Settings → Roles.",
+                ephemeral=True,
+            )
+            return
+        settings = await self.bot.registration_db.get_guild_settings(interaction.guild_id)
+        other_setting = (
+            "pending_role_id" if setting == "participant_role_id" else "participant_role_id"
+        )
+        if settings[other_setting] == role.id:
+            await interaction.response.send_message(
+                "Pending and Participant must be different roles.", ephemeral=True
+            )
             return
         await self.bot.registration_db.set_guild_setting(interaction.guild_id, setting, role.id)
         await interaction.response.send_message(f"{label} set to {role.mention}.", ephemeral=True)
