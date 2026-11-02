@@ -66,7 +66,7 @@ def test_registration_lifecycle_and_role_outbox(tmp_path):
         await db.finish_role_sync_job(target_job_id)
         remaining = await db.pending_role_sync_jobs()
         assert target_job_id not in {job["id"] for job in remaining}
-        assert len(remaining) == 5
+        assert {job["id"] for job in remaining} == {job["id"] for job in jobs[1:]}
 
     asyncio.run(scenario())
 
