@@ -4,7 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-_RIOT_ID_RE = re.compile(r'^[^#\\s]{3,16}#[A-Za-z0-9]{3,5}$')
+_RIOT_ID_RE = re.compile(r'^[^#\s]{3,16}#[A-Za-z0-9]{3,5}$')
 
 def validate_riot_id(value: str) -> str:
     normalized = value.strip()
