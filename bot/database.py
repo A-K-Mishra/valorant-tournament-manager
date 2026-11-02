@@ -53,12 +53,17 @@ class RegistrationDatabase:
                 status TEXT NOT NULL DEFAULT 'pending'
                     CHECK (status IN ('pending', 'complete', 'failed')),
                 attempts INTEGER NOT NULL DEFAULT 0,
+                next_attempt_at REAL NOT NULL DEFAULT 0,
                 last_error TEXT,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )""")
+            cur = await db.execute("PRAGMA table_info(role_sync_jobs)")
+            columns = {row[1] for row in await cur.fetchall()}
+            if "next_attempt_at" not in columns:
+                await db.execute("ALTER TABLE role_sync_jobs ADD COLUMN next_attempt_at REAL NOT NULL DEFAULT 0")
             await db.execute("""CREATE INDEX IF NOT EXISTS idx_role_sync_pending
-                ON role_sync_jobs(status, created_at)""")
+                ON role_sync_jobs(status, next_attempt_at, created_at)""")
             await db.commit()
 
     async def get_guild_settings(self, guild_id: int) -> dict:
@@ -245,8 +250,10 @@ class RegistrationDatabase:
         async with aiosqlite.connect(self.database_path) as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
-                "SELECT * FROM role_sync_jobs WHERE status IN ('pending','failed') "
-                "ORDER BY id ASC LIMIT ?", (limit,)
+                """SELECT * FROM role_sync_jobs
+                   WHERE status='pending'
+                      OR (status='failed' AND attempts < 8 AND next_attempt_at <= unixepoch())
+                   ORDER BY id ASC LIMIT ?""", (limit,)
             )
             return [dict(row) for row in await cur.fetchall()]
 
@@ -262,7 +269,8 @@ class RegistrationDatabase:
         async with aiosqlite.connect(self.database_path) as db:
             await db.execute(
                 """UPDATE role_sync_jobs SET status='failed',attempts=attempts+1,
-                       last_error=?,updated_at=CURRENT_TIMESTAMP WHERE id=?""",
+                       next_attempt_at=unixepoch() + MIN(30 * (1 << MIN(attempts, 7)), 3600),
+                       last_error=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status != 'complete'""",
                 (error[:1000], job_id),
             )
             await db.commit()
