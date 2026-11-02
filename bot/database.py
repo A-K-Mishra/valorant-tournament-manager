@@ -112,6 +112,13 @@ class RegistrationDatabase:
     ) -> None:
         if role_id is None:
             return
+        # Replace unfinished operations for this member/role with the latest intent.
+        await db.execute(
+            """DELETE FROM role_sync_jobs
+               WHERE guild_id=? AND user_id=? AND role_id=?
+                 AND status IN ('pending','failed')""",
+            (guild_id, user_id, role_id),
+        )
         await db.execute(
             """INSERT INTO role_sync_jobs(guild_id,user_id,role_id,operation)
                VALUES(?,?,?,?)""",
@@ -201,7 +208,7 @@ class RegistrationDatabase:
             db.row_factory = aiosqlite.Row
             cur = await db.execute(
                 "SELECT * FROM role_sync_jobs WHERE status IN ('pending','failed') "
-                "ORDER BY created_at ASC LIMIT ?", (limit,)
+                "ORDER BY id ASC LIMIT ?", (limit,)
             )
             return [dict(row) for row in await cur.fetchall()]
 
